@@ -1764,7 +1764,12 @@ class NotificationService:
                 from datetime import datetime, timezone
                 dt_utc = datetime.fromtimestamp(float(timestamp), tz=timezone.utc)
                 dt_local = datetime.fromtimestamp(float(timestamp))
-                logger.info(f"Feishu timestamp: {timestamp} (UTC: {dt_utc.isoformat()}, Local: {dt_local.isoformat()})")
+                logger.info(f"Feishu signature generation:")
+                logger.info(f"  - Timestamp: {timestamp}")
+                logger.info(f"  - UTC time: {dt_utc.isoformat()}")
+                logger.info(f"  - Local time: {dt_local.isoformat()}")
+                logger.info(f"  - Secret length: {len(self._feishu_secret)} chars")
+                logger.info(f"  - Secret prefix: {self._feishu_secret[:10]}...")
                 
                 # 飞书签名算法：HMAC-SHA256(key=timestamp+"\n"+secret, msg="")
                 key = f"{timestamp}\n{self._feishu_secret}".encode('utf-8')
@@ -1775,7 +1780,7 @@ class NotificationService:
 
                 payload['timestamp'] = timestamp
                 payload['sign'] = sign
-                logger.debug(f"飞书签名: timestamp={timestamp}, sign={sign[:20]}...")
+                logger.info(f"  - Generated sign: {sign}")
 
             logger.debug(f"飞书请求 URL: {self._feishu_url}")
             logger.debug(f"飞书请求 payload 长度: {len(content)} 字符")

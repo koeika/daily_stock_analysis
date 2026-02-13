@@ -51,6 +51,26 @@ jobs:
         run: |
           mkdir -p data logs reports
       
+      - name: 设置时区并同步时间
+        run: |
+          # Set timezone to Asia/Shanghai
+          sudo timedatectl set-timezone Asia/Shanghai || true
+          
+          # Sync time with NTP server
+          echo "Syncing time with NTP server..."
+          sudo apt-get update -qq
+          sudo apt-get install -y ntpdate
+          sudo ntpdate -u pool.ntp.org || sudo ntpdate -u time.nist.gov || true
+          
+          # Display current time for debugging
+          echo "==================================="
+          echo "System Time After Sync:"
+          echo "==================================="
+          echo "Local time: $(date '+%Y-%m-%d %H:%M:%S %Z')"
+          echo "UTC time: $(date -u '+%Y-%m-%d %H:%M:%S %Z')"
+          echo "Unix timestamp: $(date +%s)"
+          echo "==================================="
+      
       - name: 执行股票分析
         env:
           # ==========================================
