@@ -173,9 +173,10 @@ class Config:
 
     # === 实时行情增强数据配置 ===
     # 实时行情开关（关闭后使用历史收盘价进行分析）
-    enable_realtime_quote: bool = True
+    # GitHub Actions 环境建议设为 False（境外网络不稳定）
+    enable_realtime_quote: bool = False
     # 筹码分布开关（该接口不稳定，云端部署建议关闭）
-    enable_chip_distribution: bool = True
+    enable_chip_distribution: bool = False
     # 实时行情数据源优先级（逗号分隔）
     # 推荐顺序：tencent > akshare_sina > efinance > akshare_em > tushare
     # - tencent: 腾讯财经，有量比/换手率/市盈率等，单股查询稳定（推荐）
