@@ -1756,6 +1756,20 @@ class NotificationService:
     def _send_feishu_message(self, content: str) -> bool:
         """发送单条飞书消息（优先使用 Markdown 卡片）"""
         def _post_payload(payload: Dict[str, Any]) -> bool:
+            # 如果配置了签名密钥，添加签名验证
+            if self._feishu_secret:
+                timestamp = str(round(time.time()))
+                # 飞书签名算法：HMAC-SHA256(key=timestamp+"\n"+secret, msg="")
+                key = f"{timestamp}\n{self._feishu_secret}".encode('utf-8')
+                msg = "".encode('utf-8')
+                hmac_code = hmac.new(key, msg, digestmod=hashlib.sha256).digest()
+                import base64
+                sign = base64.b64encode(hmac_code).decode('utf-8')
+
+                payload['timestamp'] = timestamp
+                payload['sign'] = sign
+                logger.debug(f"飞书签名: timestamp={timestamp}, sign={sign[:20]}...")
+
             logger.debug(f"飞书请求 URL: {self._feishu_url}")
             logger.debug(f"飞书请求 payload 长度: {len(content)} 字符")
 
