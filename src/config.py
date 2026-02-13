@@ -13,7 +13,7 @@ A股自选股智能分析系统 - 配置管理模块
 import os
 import re
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict
 from dotenv import load_dotenv, dotenv_values
 from dataclasses import dataclass, field
 
@@ -49,7 +49,33 @@ class Config:
     """
     
     # === 自选股配置 ===
-    stock_list: List[str] = field(default_factory=list)
+    stock_list: List[str] = field(default_factory=list)  # A股自选列表
+
+    # === 美股配置 ===
+    us_stock_list: List[str] = field(default_factory=list)  # 美股自选列表
+    us_market_enabled: bool = False  # 是否启用美股分析
+    alpha_vantage_key: Optional[str] = None  # Alpha Vantage API Key
+    us_data_source_priority: str = "alpha_vantage,yfinance"  # 美股数据源优先级
+    us_premarket_analysis: bool = True  # 是否分析盘前数据
+    us_options_analysis: bool = True  # 是否分析期权情绪
+    us_sector_analysis: bool = True  # 是否分析板块轮动
+    us_macro_analysis: bool = True  # 是否追踪宏观事件
+
+    # 美股技术指标配置
+    us_ema_periods: List[int] = field(default_factory=lambda: [8, 21, 50])  # EMA周期
+    us_bollinger_period: int = 20  # 布林带周期
+    us_atr_period: int = 14  # ATR周期
+    us_adx_period: int = 14  # ADX周期
+
+    # 美股风险参数
+    us_max_drawdown_pct: float = 10.0  # 最大回撤止损（%）
+    us_atr_stop_multiplier: float = 2.0  # ATR止损倍数
+    us_position_size_max: float = 30.0  # 单股最大仓位（%）
+
+    # 美股推送配置
+    us_report_type: str = "full"  # simple/full
+    us_single_stock_notify: bool = False  # 是否单股推送
+    us_push_schedule: str = "18:00"  # 北京时间推送时间
 
     # === 飞书云文档配置 ===
     feishu_app_id: Optional[str] = None
@@ -142,6 +168,10 @@ class Config:
     feishu_max_bytes: int = 20000  # 飞书限制约 20KB，默认 20000 字节
     wechat_max_bytes: int = 4000   # 企业微信限制 4096 字节，默认 4000 字节
     wechat_msg_type: str = "markdown"  # 企业微信消息类型，默认 markdown 类型
+    
+    # 报告内容配置
+    report_detail_level: str = 'full'  # 报告详细程度: full（完整） | compact（精简）
+    feishu_auto_compact: bool = True  # 飞书推送是否自动使用精简模式
     
     # === 数据库配置 ===
     database_path: str = "./data/stock_analysis.db"
@@ -321,6 +351,18 @@ class Config:
         # 如果没有配置，使用默认的示例股票
         if not stock_list:
             stock_list = ['600519', '000001', '300750']
+
+        # === 解析美股配置 ===
+        us_stock_list_str = os.getenv('US_STOCK_LIST', '')
+        us_stock_list = [
+            code.strip()
+            for code in us_stock_list_str.split(',')
+            if code.strip()
+        ]
+
+        # 解析美股EMA周期
+        us_ema_periods_str = os.getenv('US_EMA_PERIODS', '8,21,50')
+        us_ema_periods = [int(p.strip()) for p in us_ema_periods_str.split(',') if p.strip()]
         
         # 解析搜索引擎 API Keys（支持多个 key，逗号分隔）
         bocha_keys_str = os.getenv('BOCHA_API_KEYS', '')
@@ -347,6 +389,25 @@ class Config:
         
         return cls(
             stock_list=stock_list,
+            # 美股配置
+            us_stock_list=us_stock_list,
+            us_market_enabled=os.getenv('US_MARKET_ENABLED', 'false').lower() == 'true',
+            alpha_vantage_key=os.getenv('ALPHA_VANTAGE_KEY'),
+            us_data_source_priority=os.getenv('US_DATA_SOURCE_PRIORITY', 'alpha_vantage,yfinance'),
+            us_premarket_analysis=os.getenv('US_PREMARKET_ANALYSIS', 'true').lower() == 'true',
+            us_options_analysis=os.getenv('US_OPTIONS_ANALYSIS', 'true').lower() == 'true',
+            us_sector_analysis=os.getenv('US_SECTOR_ANALYSIS', 'true').lower() == 'true',
+            us_macro_analysis=os.getenv('US_MACRO_ANALYSIS', 'true').lower() == 'true',
+            us_ema_periods=us_ema_periods,
+            us_bollinger_period=int(os.getenv('US_BOLLINGER_PERIOD', '20')),
+            us_atr_period=int(os.getenv('US_ATR_PERIOD', '14')),
+            us_adx_period=int(os.getenv('US_ADX_PERIOD', '14')),
+            us_max_drawdown_pct=float(os.getenv('US_MAX_DRAWDOWN_PCT', '10.0')),
+            us_atr_stop_multiplier=float(os.getenv('US_ATR_STOP_MULTIPLIER', '2.0')),
+            us_position_size_max=float(os.getenv('US_POSITION_SIZE_MAX', '30.0')),
+            us_report_type=os.getenv('US_REPORT_TYPE', 'full'),
+            us_single_stock_notify=os.getenv('US_SINGLE_STOCK_NOTIFY', 'false').lower() == 'true',
+            us_push_schedule=os.getenv('US_PUSH_SCHEDULE', '18:00'),
             feishu_app_id=os.getenv('FEISHU_APP_ID'),
             feishu_app_secret=os.getenv('FEISHU_APP_SECRET'),
             feishu_folder_token=os.getenv('FEISHU_FOLDER_TOKEN'),
@@ -393,6 +454,8 @@ class Config:
             feishu_max_bytes=int(os.getenv('FEISHU_MAX_BYTES', '20000')),
             wechat_max_bytes=wechat_max_bytes,
             wechat_msg_type=wechat_msg_type_lower,
+            report_detail_level=os.getenv('REPORT_DETAIL_LEVEL', 'full'),
+            feishu_auto_compact=os.getenv('FEISHU_AUTO_COMPACT', 'true').lower() == 'true',
             database_path=os.getenv('DATABASE_PATH', './data/stock_analysis.db'),
             save_context_snapshot=os.getenv('SAVE_CONTEXT_SNAPSHOT', 'true').lower() == 'true',
             backtest_enabled=os.getenv('BACKTEST_ENABLED', 'true').lower() == 'true',
@@ -542,6 +605,53 @@ class Config:
             stock_list = ['000001']
 
         self.stock_list = stock_list
+
+    @staticmethod
+    def identify_market(stock_code: str) -> str:
+        """
+        Identify which market a stock code belongs to
+
+        Args:
+            stock_code: Stock ticker code
+
+        Returns:
+            'cn' for Chinese A-shares, 'us' for US stocks, 'hk' for Hong Kong stocks
+        """
+        code = stock_code.strip().upper()
+
+        # Hong Kong stocks (HK prefix or 5-digit code)
+        if code.startswith('HK') or (code.isdigit() and len(code) == 5):
+            return 'hk'
+
+        # Chinese A-shares (6-digit code starting with 0, 3, 6)
+        if code.isdigit() and len(code) == 6:
+            if code[0] in ('0', '3', '6'):
+                return 'cn'
+
+        # US stocks (alphabetic tickers, typically 1-5 characters)
+        if code.isalpha():
+            return 'us'
+
+        # Default to CN for unknown formats
+        return 'cn'
+
+    def get_stocks_by_market(self) -> Dict[str, List[str]]:
+        """
+        Group stocks by market
+
+        Returns:
+            Dict with 'cn', 'us', 'hk' keys containing stock lists
+        """
+        markets = {'cn': [], 'us': [], 'hk': []}
+
+        for code in self.stock_list:
+            market = self.identify_market(code)
+            markets[market].append(code)
+
+        # Add US-specific stocks
+        markets['us'].extend(self.us_stock_list)
+
+        return markets
     
     def validate(self) -> List[str]:
         """

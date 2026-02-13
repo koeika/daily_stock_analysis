@@ -1131,6 +1131,159 @@ class NotificationService:
         
         return content
     
+    def generate_compact_dashboard_report(
+        self,
+        results: List[AnalysisResult],
+        report_date: Optional[str] = None
+    ) -> str:
+        """
+        生成精简版决策仪表盘（移动端友好，单次推送）
+        
+        只保留核心信息：
+        - 决策建议 + 评分
+        - 一句话决策
+        - 关键点位（买点/止损/目标）
+        - 风险与利好（各最多2条）
+        - 简化行情数据
+        
+        Args:
+            results: 分析结果列表
+            report_date: 报告日期（默认今天）
+            
+        Returns:
+            精简版 Markdown 报告（约10KB）
+        """
+        if report_date is None:
+            report_date = datetime.now().strftime('%Y-%m-%d')
+        
+        # 按评分排序
+        sorted_results = sorted(results, key=lambda x: x.sentiment_score, reverse=True)
+        
+        # 统计信息
+        buy_count = sum(1 for r in results if getattr(r, 'decision_type', '') == 'buy')
+        sell_count = sum(1 for r in results if getattr(r, 'decision_type', '') == 'sell')
+        hold_count = sum(1 for r in results if getattr(r, 'decision_type', '') in ('hold', ''))
+        
+        report_lines = [
+            f"# 🎯 {report_date} 决策仪表盘",
+            "",
+            f"> 共分析 **{len(results)}** 只股票 | 🟢买入:{buy_count} 🟡观望:{hold_count} 🔴卖出:{sell_count}",
+            "",
+            "## 📊 分析结果摘要",
+            "",
+        ]
+        
+        # 摘要列表
+        for r in sorted_results:
+            _, signal_emoji, _ = self._get_signal_level(r)
+            display_name = self._escape_md(r.name)
+            report_lines.append(
+                f"{signal_emoji} **{display_name}({r.code})**: {r.operation_advice} | "
+                f"评分 {r.sentiment_score} | {r.trend_prediction}"
+            )
+        
+        report_lines.extend(["", "---", ""])
+        
+        # 逐个股票的精简版
+        for result in sorted_results:
+            signal_text, signal_emoji, signal_tag = self._get_signal_level(result)
+            dashboard = result.dashboard if hasattr(result, 'dashboard') and result.dashboard else {}
+            
+            # 股票名称
+            raw_name = result.name if result.name and not result.name.startswith('股票') else f'股票{result.code}'
+            stock_name = self._escape_md(raw_name)
+            
+            report_lines.extend([
+                f"## {signal_emoji} {stock_name} ({result.code})",
+                "",
+            ])
+            
+            # ========== 核心结论 ==========
+            core = dashboard.get('core_conclusion', {}) if dashboard else {}
+            one_sentence = core.get('one_sentence', result.analysis_summary)
+            time_sense = core.get('time_sensitivity', '本周内')
+            
+            report_lines.extend([
+                f"**{signal_emoji} {signal_text}** | {result.trend_prediction}",
+                "",
+                f"> {one_sentence}",
+                "",
+                f"⏰ {time_sense}",
+                "",
+            ])
+            
+            # ========== 重要信息（精简）==========
+            intel = dashboard.get('intelligence', {}) if dashboard else {}
+            
+            # 风险警报（最多2条）
+            risks = intel.get('risk_alerts', [])[:2] if intel else []
+            if risks:
+                report_lines.append("🚨 **风险**: " + "; ".join(risks))
+                report_lines.append("")
+            
+            # 利好催化（最多2条）
+            catalysts = intel.get('positive_catalysts', [])[:2] if intel else []
+            if catalysts:
+                report_lines.append("✨ **利好**: " + "; ".join(catalysts))
+                report_lines.append("")
+            
+            # ========== 当日行情（精简）==========
+            if hasattr(result, 'current_price') and result.current_price:
+                price = result.current_price
+                change = getattr(result, 'change_pct', 'N/A')
+                change_emoji = "🔴" if isinstance(change, (int, float)) and change < 0 else "🟢"
+                
+                report_lines.append(
+                    f"📈 **当日**: {price}元 {change_emoji}{change}% | "
+                    f"高:{getattr(result, 'high_price', 'N/A')} 低:{getattr(result, 'low_price', 'N/A')}"
+                )
+                report_lines.append("")
+            
+            # ========== 狙击点位 ==========
+            battle = dashboard.get('battle_plan', {}) if dashboard else {}
+            sniper = battle.get('sniper_points', {})
+            if sniper:
+                ideal = self._clean_sniper_value(sniper.get('ideal_buy', 'N/A'))
+                stop = self._clean_sniper_value(sniper.get('stop_loss', 'N/A'))
+                target = self._clean_sniper_value(sniper.get('take_profit', 'N/A'))
+                
+                report_lines.append(f"🎯 **点位**: 买入{ideal} | 止损{stop} | 目标{target}")
+                report_lines.append("")
+            
+            # ========== 仓位建议（精简）==========
+            pos_advice = core.get('position_advice', {})
+            if pos_advice:
+                no_pos = pos_advice.get('no_position', '')
+                has_pos = pos_advice.get('has_position', '')
+                if no_pos:
+                    report_lines.append(f"🆕 **空仓者**: {no_pos}")
+                if has_pos:
+                    report_lines.append(f"💼 **持仓者**: {has_pos}")
+                report_lines.append("")
+            
+            # ========== 关键指标（1行）==========
+            data_persp = dashboard.get('data_perspective', {}) if dashboard else {}
+            if data_persp:
+                trend_data = data_persp.get('trend_status', {})
+                vol_data = data_persp.get('volume_analysis', {})
+                
+                indicators = []
+                if trend_data.get('is_bullish'):
+                    indicators.append(f"多头排列✅")
+                if vol_data.get('volume_status'):
+                    indicators.append(vol_data['volume_status'])
+                
+                if indicators:
+                    report_lines.append(f"📊 {' | '.join(indicators)}")
+                    report_lines.append("")
+            
+            report_lines.extend(["---", ""])
+        
+        # 底部
+        report_lines.append(f"*生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*")
+        
+        return "\n".join(report_lines)
+    
     def generate_single_stock_report(self, result: AnalysisResult) -> str:
         """
         生成单只股票的分析报告（用于单股推送模式 #55）
