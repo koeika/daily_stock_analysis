@@ -1760,6 +1760,12 @@ class NotificationService:
             # 如果配置了签名密钥，添加签名验证
             if self._feishu_secret:
                 timestamp = str(round(time.time()))
+                # Log timestamp details for debugging
+                from datetime import datetime, timezone
+                dt_utc = datetime.fromtimestamp(float(timestamp), tz=timezone.utc)
+                dt_local = datetime.fromtimestamp(float(timestamp))
+                logger.info(f"Feishu timestamp: {timestamp} (UTC: {dt_utc.isoformat()}, Local: {dt_local.isoformat()})")
+                
                 # 飞书签名算法：HMAC-SHA256(key=timestamp+"\n"+secret, msg="")
                 key = f"{timestamp}\n{self._feishu_secret}".encode('utf-8')
                 msg = "".encode('utf-8')
