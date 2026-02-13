@@ -143,6 +143,7 @@ class NotificationService:
         # 各渠道的 Webhook URL
         self._wechat_url = config.wechat_webhook_url
         self._feishu_url = getattr(config, 'feishu_webhook_url', None)
+        self._feishu_secret = getattr(config, 'feishu_webhook_secret', None)
 
         # 微信消息类型配置
         self._wechat_msg_type = getattr(config, 'wechat_msg_type', 'markdown')
