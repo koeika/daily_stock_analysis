@@ -73,7 +73,9 @@ class StockAnalysisPipeline:
         self.db = get_db()
         self.fetcher_manager = DataFetcherManager()
         # 不再单独创建 akshare_fetcher，统一使用 fetcher_manager 获取增强数据
-        self.trend_analyzer = StockTrendAnalyzer()  # 趋势分析器
+        self.trend_analyzer = StockTrendAnalyzer(
+            score_weights=self.config.score_weights,
+        )  # 趋势分析器
         self.analyzer = GeminiAnalyzer()
         self.notifier = NotificationService(source_message=source_message)
         

@@ -324,70 +324,122 @@ class EfinanceFetcher(BaseFetcher):
     
     def _fetch_etf_data(self, stock_code: str, start_date: str, end_date: str) -> pd.DataFrame:
         """
-        获取 ETF 基金历史数据
-        
-        数据来源：ef.fund.get_quote_history()
-        
+        获取 ETF 基金历史数据（专用接口，优先使用成交量完整的股票行情接口）
+
+        数据源策略（按优先级）：
+        1. ef.stock.get_quote_history() - ETF 在交易所交易，股票接口返回完整 OHLCV（含成交量/成交额）
+        2. ef.fund.get_quote_history() - 基金净值接口，仅返回 日期/单位净值/累计净值/涨跌幅（无 volume/amount）
+
         Args:
-            stock_code: ETF 代码，如 '512400', '159883'
+            stock_code: ETF 代码，如 '512400', '159928', '159636'
             start_date: 开始日期，格式 'YYYY-MM-DD'
             end_date: 结束日期，格式 'YYYY-MM-DD'
-            
+
         Returns:
-            ETF 历史数据 DataFrame
+            ETF 历史数据 DataFrame，包含 date, open, high, low, close, volume, amount, pct_chg
         """
         import efinance as ef
-        
-        # 防封禁策略 1: 随机 User-Agent
-        self._set_random_user_agent()
-        
-        # 防封禁策略 2: 强制休眠
-        self._enforce_rate_limit()
-        
-        # 格式化日期
+
         beg_date = start_date.replace('-', '')
         end_date_fmt = end_date.replace('-', '')
-        
-        logger.info(f"[API调用] ef.fund.get_quote_history(fund_code={stock_code})")
-        
+
+        # ========== 方案 1：优先使用股票行情接口（包含 volume/amount） ==========
+        df = self._fetch_etf_via_stock_api(stock_code, beg_date, end_date_fmt, start_date, end_date)
+        if df is not None and not df.empty:
+            has_volume = '成交量' in df.columns or 'volume' in df.columns
+            logger.info(f"[ETF专用接口] {stock_code} 使用股票行情接口"
+                       f"{'，含成交量' if has_volume else '（无成交量列，将补0）'}")
+            return df
+
+        # ========== 方案 2：回退到基金净值接口（无成交量） ==========
+        logger.info(f"[ETF专用接口] {stock_code} 股票接口失败或返回空，回退到基金净值接口")
+        return self._fetch_etf_via_fund_api(stock_code, start_date, end_date)
+
+    def _fetch_etf_via_stock_api(
+        self,
+        stock_code: str,
+        beg_date: str,
+        end_date_fmt: str,
+        start_date: str,
+        end_date: str,
+    ) -> Optional[pd.DataFrame]:
+        """
+        通过股票行情接口获取 ETF 日线数据（含成交量、成交额）
+
+        ETF 在交易所交易，与股票共用行情接口，返回完整 OHLCV。
+        """
+        import efinance as ef
+
+        self._set_random_user_agent()
+        self._enforce_rate_limit()
+
+        logger.info(f"[API调用] ef.stock.get_quote_history(stock_codes={stock_code}, beg={beg_date}, end={end_date_fmt}) [ETF股票接口]")
+
         try:
             import time as _time
             api_start = _time.time()
-            
-            # 调用 efinance 获取 ETF 日线数据
-            # 注意: ef.fund.get_quote_history 不支持 beg/end/klt/fqt 参数
-            # 它返回的是 NAV 数据: 日期, 单位净值, 累计净值, 涨跌幅
-            df = ef.fund.get_quote_history(fund_code=stock_code)
-            
-            # 手动过滤日期
-            if df is not None and not df.empty and '日期' in df.columns:
-                # 确保日期列是字符串格式，且格式匹配筛选条件
-                # ef 返回的日期通常是 'YYYY-MM-DD'
-                mask = (df['日期'] >= start_date) & (df['日期'] <= end_date)
-                df = df[mask].copy()
-            
+
+            df = ef.stock.get_quote_history(
+                stock_codes=stock_code,
+                beg=beg_date,
+                end=end_date_fmt,
+                klt=101,  # 日线
+                fqt=1,    # 前复权
+            )
+
             api_elapsed = _time.time() - api_start
-            
-            # 记录返回数据摘要
+
             if df is not None and not df.empty:
-                logger.info(f"[API返回] ef.fund.get_quote_history 成功: 返回 {len(df)} 行数据, 耗时 {api_elapsed:.2f}s")
+                logger.info(f"[API返回] ef.stock.get_quote_history(ETF) 成功: {len(df)} 行, 耗时 {api_elapsed:.2f}s")
                 logger.info(f"[API返回] 列名: {list(df.columns)}")
                 if '日期' in df.columns:
                     logger.info(f"[API返回] 日期范围: {df['日期'].iloc[0]} ~ {df['日期'].iloc[-1]}")
-                logger.debug(f"[API返回] 最新3条数据:\n{df.tail(3).to_string()}")
-            else:
-                logger.warning(f"[API返回] ef.fund.get_quote_history 返回空数据, 耗时 {api_elapsed:.2f}s")
-            
-            return df
-            
+                return df
+
+            logger.warning(f"[API返回] ef.stock.get_quote_history(ETF) 返回空数据, 耗时 {api_elapsed:.2f}s")
+            return None
+
+        except Exception as e:
+            logger.debug(f"[ETF股票接口] {stock_code} 调用失败: {e}")
+            return None
+
+    def _fetch_etf_via_fund_api(self, stock_code: str, start_date: str, end_date: str) -> pd.DataFrame:
+        """
+        通过基金净值接口获取 ETF 数据（无成交量，仅净值 + 涨跌幅）
+
+        返回列：日期, 单位净值, 累计净值, 涨跌幅。volume/amount 将在 _normalize_data 中补 0。
+        """
+        import efinance as ef
+
+        self._set_random_user_agent()
+        self._enforce_rate_limit()
+
+        logger.info(f"[API调用] ef.fund.get_quote_history(fund_code={stock_code}) [ETF基金净值接口]")
+
+        try:
+            import time as _time
+            api_start = _time.time()
+
+            df = ef.fund.get_quote_history(fund_code=stock_code)
+
+            if df is not None and not df.empty and '日期' in df.columns:
+                mask = (df['日期'] >= start_date) & (df['日期'] <= end_date)
+                df = df[mask].copy()
+
+            api_elapsed = _time.time() - api_start
+
+            if df is not None and not df.empty:
+                logger.info(f"[API返回] ef.fund.get_quote_history 成功: {len(df)} 行, 耗时 {api_elapsed:.2f}s")
+                logger.info(f"[API返回] 列名: {list(df.columns)} (注: 基金接口无成交量)")
+                return df
+
+            logger.warning(f"[API返回] ef.fund.get_quote_history 返回空数据, 耗时 {api_elapsed:.2f}s")
+            return pd.DataFrame()
+
         except Exception as e:
             error_msg = str(e).lower()
-            
-            # 检测反爬封禁
-            if any(keyword in error_msg for keyword in ['banned', 'blocked', '频率', 'rate', '限制']):
-                logger.warning(f"检测到可能被封禁: {e}")
+            if any(kw in error_msg for kw in ['banned', 'blocked', '频率', 'rate', '限制']):
                 raise RateLimitError(f"efinance 可能被限流: {e}") from e
-            
             raise DataFetchError(f"efinance 获取 ETF 数据失败: {e}") from e
     
     def _normalize_data(self, df: pd.DataFrame, stock_code: str) -> pd.DataFrame:

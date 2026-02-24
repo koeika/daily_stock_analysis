@@ -61,6 +61,12 @@ class Config:
     us_sector_analysis: bool = True  # 是否分析板块轮动
     us_macro_analysis: bool = True  # 是否追踪宏观事件
 
+    # A股技术指标评分权重 (共100分，可选配置)
+    # 格式: trend,bias,volume,support,macd,rsi,kdj,boll
+    score_weights: List[int] = field(
+        default_factory=lambda: [28, 18, 12, 8, 12, 7, 8, 7]
+    )  # 趋势,乖离率,量能,支撑,MACD,RSI,KDJ,BOLL
+
     # 美股技术指标配置
     us_ema_periods: List[int] = field(default_factory=lambda: [8, 21, 50])  # EMA周期
     us_bollinger_period: int = 20  # 布林带周期
@@ -360,6 +366,12 @@ class Config:
             if code.strip()
         ]
 
+        # 解析A股评分权重 (trend,bias,volume,support,macd,rsi,kdj,boll)
+        score_weights_str = os.getenv('SCORE_WEIGHTS', '28,18,12,8,12,7,8,7')
+        score_weights = [int(w.strip()) for w in score_weights_str.split(',') if w.strip()]
+        if len(score_weights) != 8:
+            score_weights = [28, 18, 12, 8, 12, 7, 8, 7]  # fallback to default
+
         # 解析美股EMA周期
         us_ema_periods_str = os.getenv('US_EMA_PERIODS', '8,21,50')
         us_ema_periods = [int(p.strip()) for p in us_ema_periods_str.split(',') if p.strip()]
@@ -398,6 +410,7 @@ class Config:
             us_options_analysis=os.getenv('US_OPTIONS_ANALYSIS', 'true').lower() == 'true',
             us_sector_analysis=os.getenv('US_SECTOR_ANALYSIS', 'true').lower() == 'true',
             us_macro_analysis=os.getenv('US_MACRO_ANALYSIS', 'true').lower() == 'true',
+            score_weights=score_weights,
             us_ema_periods=us_ema_periods,
             us_bollinger_period=int(os.getenv('US_BOLLINGER_PERIOD', '20')),
             us_atr_period=int(os.getenv('US_ATR_PERIOD', '14')),
