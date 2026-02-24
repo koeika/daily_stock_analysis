@@ -23,6 +23,7 @@ from src.config import get_config, Config
 from src.storage import get_db
 from data_provider import DataFetcherManager
 from data_provider.realtime_types import ChipDistribution
+from data_provider.etf_holdings import ETFHoldingsManager, expand_etf_to_holdings
 from src.analyzer import GeminiAnalyzer, AnalysisResult, STOCK_NAME_MAP
 from src.notification import NotificationService, NotificationChannel
 from src.search_service import SearchService
@@ -618,6 +619,22 @@ class StockAnalysisPipeline:
         if not stock_codes:
             logger.error("未配置自选股列表，请在 .env 文件中设置 STOCK_LIST")
             return []
+        
+        # === ETF 自动扩展成分股（新功能）===
+        original_count = len(stock_codes)
+        if self.config.enable_etf_holdings_expansion:
+            stock_codes, etf_mapping = expand_etf_to_holdings(
+                stock_codes,
+                top_n=self.config.etf_holdings_top_n,
+                include_etf=True
+            )
+            if etf_mapping:
+                logger.info(f"[ETF扩展] 启用成分股自动扩展:")
+                for etf_code, holdings in etf_mapping.items():
+                    etf_info = ETFHoldingsManager.get_etf_info(etf_code)
+                    etf_name = etf_info['name'] if etf_info else etf_code
+                    logger.info(f"  {etf_name}({etf_code}) -> {len(holdings)} 只成分股")
+                logger.info(f"[ETF扩展] 原始 {original_count} 只 -> 扩展后 {len(stock_codes)} 只")
         
         logger.info(f"===== 开始分析 {len(stock_codes)} 只股票 =====")
         logger.info(f"股票列表: {', '.join(stock_codes)}")

@@ -1035,11 +1035,24 @@ class SearchService:
         else: # 周二(1) - 周五(4)
             search_days = 1
 
+        # === ETF 成分股关键词增强（新功能）===
+        from data_provider.etf_holdings import ETFHoldingsManager
+        enhanced_keywords = []
+        
+        if focus_keywords:
+            enhanced_keywords = focus_keywords
+        else:
+            # 检查是否为已知的 ETF
+            if ETFHoldingsManager.is_supported_etf(stock_code):
+                etf_keywords = ETFHoldingsManager.get_search_keywords(stock_code)
+                enhanced_keywords = etf_keywords[:8]  # 限制关键词数量
+                logger.info(f"[ETF搜索增强] {stock_name}({stock_code}) 添加成分股关键词: {', '.join(enhanced_keywords[:3])}...")
+
         # 构建搜索查询（优化搜索效果）
         is_foreign = self._is_foreign_stock(stock_code)
-        if focus_keywords:
-            # 如果提供了关键词，直接使用关键词作为查询
-            query = " ".join(focus_keywords)
+        if enhanced_keywords:
+            # ETF 或提供了关键词：使用增强的关键词
+            query = " ".join(enhanced_keywords[:5])  # 限制查询长度
         elif is_foreign:
             # 港股/美股使用英文搜索关键词
             query = f"{stock_name} {stock_code} stock latest news"

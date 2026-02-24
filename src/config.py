@@ -67,6 +67,11 @@ class Config:
         default_factory=lambda: [28, 18, 12, 8, 12, 7, 8, 7]
     )  # 趋势,乖离率,量能,支撑,MACD,RSI,KDJ,BOLL
 
+    # === ETF 成分股扩展配置 ===
+    enable_etf_holdings_expansion: bool = False  # 是否启用 ETF 成分股自动扩展
+    etf_holdings_top_n: int = 5  # 每个 ETF 扩展前 N 只重仓股
+    etf_enable_holdings_search: bool = True  # 是否在新闻搜索时包含成分股关键词
+
     # 美股技术指标配置
     us_ema_periods: List[int] = field(default_factory=lambda: [8, 21, 50])  # EMA周期
     us_bollinger_period: int = 20  # 布林带周期
@@ -411,6 +416,10 @@ class Config:
             us_sector_analysis=os.getenv('US_SECTOR_ANALYSIS', 'true').lower() == 'true',
             us_macro_analysis=os.getenv('US_MACRO_ANALYSIS', 'true').lower() == 'true',
             score_weights=score_weights,
+            # ETF 成分股扩展配置
+            enable_etf_holdings_expansion=os.getenv('ENABLE_ETF_HOLDINGS_EXPANSION', 'false').lower() == 'true',
+            etf_holdings_top_n=int(os.getenv('ETF_HOLDINGS_TOP_N', '5')),
+            etf_enable_holdings_search=os.getenv('ETF_ENABLE_HOLDINGS_SEARCH', 'true').lower() == 'true',
             us_ema_periods=us_ema_periods,
             us_bollinger_period=int(os.getenv('US_BOLLINGER_PERIOD', '20')),
             us_atr_period=int(os.getenv('US_ATR_PERIOD', '14')),

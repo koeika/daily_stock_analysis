@@ -1054,7 +1054,34 @@ class GeminiAnalyzer:
 | 股票代码 | **{code}** |
 | 股票名称 | **{stock_name}** |
 | 分析日期 | {context.get('date', '未知')} |
+"""
+        
+        # === ETF 成分股信息（新增）===
+        from data_provider.etf_holdings import ETFHoldingsManager
+        if ETFHoldingsManager.is_supported_etf(code):
+            etf_info = ETFHoldingsManager.get_etf_info(code)
+            holdings = ETFHoldingsManager.get_holdings(code, top_n=5)
+            if etf_info and holdings:
+                prompt += f"""
+| ETF 类型 | {etf_info.get('type', '未知')} |
+| 跟踪指数 | {etf_info.get('index', '未知')} |
 
+### 💼 ETF 前五大重仓股
+| 排名 | 股票名称 | 代码 | 权重 | 行业 |
+|------|----------|------|------|------|
+"""
+                for i, h in enumerate(holdings, 1):
+                    prompt += f"| {i} | {h.name} | {h.code} | {h.weight:.1f}% | {h.sector} |\n"
+                
+                prompt += """
+**分析建议：** 请结合成分股的消息面和技术走势，综合判断 ETF 整体趋势。特别关注：
+1. 重仓股（前三大）是否有重大利好/利空
+2. 成分股是否出现明显分化
+3. 行业整体景气度变化
+
+"""
+        
+        prompt += """
 ---
 
 ## 📈 技术面数据
